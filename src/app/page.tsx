@@ -25,15 +25,8 @@ export default function Home() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [scanPhase, setScanPhase] = useState<'cloning' | 'analyzing' | 'extracting' | 'complete'>('cloning');
-  const { theme, toggleTheme } = useTheme();
 
-  const phases = {
-    cloning: { label: 'Cloning Repository', icon: '📦' },
-    analyzing: { label: 'Analyzing Code Structure', icon: '🔍' },
-    extracting: { label: 'Extracting Functions & Metrics', icon: '⚙️' },
-    complete: { label: 'Processing Results', icon: '✨' }
-  };
+  const { theme, toggleTheme } = useTheme();
 
   const handleRun = () => {
     const url = (document.getElementById("rurl") as HTMLInputElement)?.value;
@@ -43,7 +36,7 @@ export default function Home() {
 
     setIsLoading(true);
     setProgress(0);
-    setScanPhase('cloning');
+
 
     // Simulate progress with phases
     const progressInterval = setInterval(() => {
@@ -55,12 +48,7 @@ export default function Home() {
         const increment = Math.random() * 8 + 2;
         const newProgress = prev + increment;
 
-        // Update phase based on progress
-        if (newProgress >= 75) {
-          setScanPhase('extracting');
-        } else if (newProgress >= 40) {
-          setScanPhase('analyzing');
-        }
+
 
         return Math.min(newProgress, 95);
       });
@@ -82,96 +70,32 @@ export default function Home() {
 
   return (
     <>
-      {/* Loading Overlay */}
+      {/* Loading Overlay - Simplified to match AnalyzePage design */}
       {isLoading && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="flex flex-col lg:flex-row items-center gap-8 max-w-5xl w-full">
-            {/* Left Side - Progress Circle */}
-            <div className="flex flex-col items-center gap-6 min-w-[280px]">
-              <div className="relative w-40 h-40">
-                <img src="/ai.png" className="w-12 h-12" />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-bold text-foreground">{Math.round(progress)}%</span>
-                  <span className="text-xs text-muted-foreground mt-1">Complete</span>
-                </div>
-              </div>
-
-              {/* Current Phase */}
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <span className="text-lg">{phases[scanPhase].icon}</span>
-                  <p className="text-foreground font-medium">{phases[scanPhase].label}</p>
-                </div>
-                <p className="text-xs text-muted-foreground">Please wait while we analyze the codebase</p>
+          <div className="flex flex-col items-center justify-center p-12 max-w-md w-full bg-card border border-border/50 shadow-2xl rounded-3xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50"></div>
+            
+            <div className="w-20 h-20 relative flex items-center justify-center mb-8">
+              <div className="absolute inset-0 border-[6px] border-primary/10 rounded-full"></div>
+              <div className="absolute inset-0 border-[6px] border-primary border-t-transparent rounded-full animate-spin" style={{ 
+                clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%)`,
+                transform: `rotate(${progress * 3.6}deg)`
+              }}></div>
+              <img src="/ai.png" className="h-10 w-10 animate-pulse object-contain" />
+            </div>
+            
+            <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground">Analyzing Repository</h2>
+            <p className="text-sm text-muted-foreground font-medium text-center mb-8 h-5">Initializing analyzer...</p>
+            
+            <div className="w-full bg-muted rounded-full h-2.5 mb-2 overflow-hidden border border-border/50 relative">
+              <div className="bg-primary h-full rounded-full transition-all duration-300 relative shadow-[0_0_12px_rgba(var(--primary),0.6)]" style={{ width: `${progress}%` }}>
+                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
               </div>
             </div>
-
-            {/* Right Side - Stats Grid */}
-            <div className="flex-1 w-full">
-              <Card className="w-full">
-                <CardContent className="p-6">
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <span>📊</span> Analysis Progress
-                  </h3>
-
-                  {/* Progress Stats Grid */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="bg-muted/50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-foreground">{Math.round(progress * 0.22)}</p>
-                      <p className="text-xs text-muted-foreground">Files Found</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-foreground">{Math.round(progress * 0.08)}</p>
-                      <p className="text-xs text-muted-foreground">Folders</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-foreground">{Math.round(progress * 76)}</p>
-                      <p className="text-xs text-muted-foreground">Lines Scanned</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-foreground">{Math.round(progress * 0.35)}</p>
-                      <p className="text-xs text-muted-foreground">Functions</p>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Overall Progress</span>
-                      <span className="font-medium">{Math.round(progress)}%</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all duration-300 rounded-full"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Phase Indicators */}
-                  <div className="mt-6 flex items-center justify-between text-xs">
-                    {Object.entries(phases).map(([key, phase], index) => {
-                      const phaseProgress = (index + 1) * 25;
-                      const isActive = progress >= phaseProgress - 25 && progress < phaseProgress + 25;
-                      const isComplete = progress > phaseProgress;
-                      return (
-                        <div
-                          key={key}
-                          className={`flex flex-col items-center gap-1 ${isComplete ? 'text-primary' : isActive ? 'text-foreground' : 'text-muted-foreground'
-                            }`}
-                        >
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isComplete ? 'bg-primary text-primary-foreground' :
-                              isActive ? 'bg-primary/20 text-primary' : 'bg-muted'
-                            }`}>
-                            {isComplete ? '✓' : index + 1}
-                          </div>
-                          <span className="text-center hidden md:block">{phase.label.split(' ')[0]}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="flex justify-between w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">
+              <span>Fetching Code</span>
+              <span>Processing</span>
             </div>
           </div>
         </div>

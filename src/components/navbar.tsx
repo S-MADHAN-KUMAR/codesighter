@@ -71,7 +71,7 @@ export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusTex
           </>
         ) : (
           <>
-            <Link href="/analyze" className={cn("px-3 py-1.5 text-xs rounded-full transition-all text-muted-foreground cursor-pointer hover:bg-muted hover:text-foreground font-medium")}>
+            <Link href="/analyze?load=true" className={cn("px-3 py-1.5 text-xs rounded-full transition-all text-muted-foreground cursor-pointer hover:bg-muted hover:text-foreground font-medium")}>
               Dashboard
             </Link>
             <Link href="/chat" className={cn("px-3 py-1.5 text-xs rounded-full transition-all text-primary bg-primary/10 font-bold")}>

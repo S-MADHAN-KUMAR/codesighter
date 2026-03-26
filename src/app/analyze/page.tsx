@@ -96,8 +96,12 @@ function AnalyzeContent() {
         if (ti && savedToken) ti.value = savedToken;
 
         window.run();
-      } else if (loadParam === 'true' && window.loadLastAnalysis) {
-        window.loadLastAnalysis();
+      } else if (window.loadLastAnalysis) {
+        // Automatically load if no URL but saved data exists, OR if specifically requested via loadParam
+        const hasSaved = localStorage.getItem('codesighter_last');
+        if (loadParam === 'true' || (!repoUrl && hasSaved)) {
+          window.loadLastAnalysis();
+        }
       }
     };
 

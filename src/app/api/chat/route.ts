@@ -4,12 +4,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const nvBase = (process.env.NV_BASE || '').trim().replace(/;$/, '');
+    const nvBase = (process.env.NV_BASE || '').trim().replace(/^['";]+|['";]+$/g, '');
+    const nvKey = (process.env.NV_KEY || '').trim().replace(/^['";]+|['";]+$/g, '');
+    
     const response = await fetch(`${nvBase}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.NV_KEY}`,
+        'Authorization': `Bearer ${nvKey}`,
         'Accept': 'text/event-stream',
       },
       body: JSON.stringify(body),

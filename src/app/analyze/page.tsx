@@ -51,6 +51,13 @@ function AnalyzeContent() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Initializing…");
   const [activeTab, setActiveTab] = useState("overview");
+  
+  const [stats, setStats] = useState<any>(null);
+  const [functions, setFunctions] = useState<any[]>([]);
+  const [duplicates, setDuplicates] = useState<any[]>([]);
+  const [aiResult, setAiResult] = useState<string>("");
+  const [full, setFull] = useState<string>("");
+  
   const { theme, toggleTheme } = useTheme();
 
   const handleGoHome = () => {
@@ -62,6 +69,21 @@ function AnalyzeContent() {
   const handleQs = (e: React.MouseEvent<HTMLElement>) =>
     window.qs?.(e.currentTarget as HTMLElement);
   const handleSendChat = () => window.sendChat?.();
+
+  useEffect(() => {
+    const handleComplete = (e: any) => {
+      const { stats, functions, duplicates, aiResult, full } = e.detail;
+      setStats(stats);
+      setFunctions(functions);
+      setDuplicates(duplicates);
+      setAiResult(aiResult);
+      setFull(full);
+      setIsLoading(false);
+    };
+
+    window.addEventListener('analysis-complete', handleComplete as any);
+    return () => window.removeEventListener('analysis-complete', handleComplete as any);
+  }, []);
 
   useEffect(() => {
     const trigger = () => {
@@ -128,6 +150,15 @@ function AnalyzeContent() {
       <Input id="rurl" type="hidden" />
       <Input id="gtoken" type="hidden" />
       <Button id="abtn" style={{ display: 'none' }}></Button>
+      <div id="rbar-url" style={{ display: 'none' }}></div>
+      <div id="rstatus" style={{ display: 'none' }}></div>
+      <div id="ltab-tree" style={{ display: 'none' }}></div>
+      <div id="ltab-issues" style={{ display: 'none' }}></div>
+      <div id="ltree-body" style={{ display: 'none' }}></div>
+      <div id="lissues-body" style={{ display: 'none' }}></div>
+      <div id="chat-msgs" style={{ display: 'none' }}></div>
+      <textarea id="cinput" style={{ display: 'none' }}></textarea>
+      <button id="sbtn" style={{ display: 'none' }}></button>
 
       {/* NATIVE LOADING OVERLAY */}
       <div id="loading" className="flex flex-col items-center justify-center inset-0 absolute z-50 bg-background/80 backdrop-blur-sm" style={{ display: 'none' }}>
@@ -167,6 +198,7 @@ function AnalyzeContent() {
             isLoading={isLoading}
             progress={progress}
             statusText={statusText}
+            repoName={full}
           />
 
 
@@ -181,7 +213,7 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Total Files</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">22</span>
+                          <span className="text-2xl font-bold">{stats?.files || 0}</span>
                           <span className="text-xs text-muted-foreground truncate">source files</span>
                         </div>
                       </CardContent>
@@ -191,7 +223,7 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Folders</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">8</span>
+                          <span className="text-2xl font-bold">{stats?.folders || 0}</span>
                           <span className="text-xs text-muted-foreground truncate">directories</span>
                         </div>
                       </CardContent>
@@ -201,8 +233,8 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Total Lines</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">7.7k</span>
-                          <span className="text-xs text-muted-foreground truncate">7,659 lines</span>
+                          <span className="text-2xl font-bold">{(stats?.lines / 1000 || 0).toFixed(1)}k</span>
+                          <span className="text-xs text-muted-foreground truncate">{(stats?.lines || 0).toLocaleString()} lines</span>
                         </div>
                       </CardContent>
                     </Card>
@@ -211,7 +243,7 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Functions</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold text-primary">35</span>
+                          <span className="text-2xl font-bold text-primary">{functions?.length || 0}</span>
                           <span className="text-xs text-muted-foreground truncate">extracted</span>
                         </div>
                       </CardContent>
@@ -221,7 +253,7 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Duplicates</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold text-destructive">5</span>
+                          <span className="text-2xl font-bold text-destructive">{duplicates?.length || 0}</span>
                           <span className="text-xs text-muted-foreground truncate">code blocks</span>
                         </div>
                       </CardContent>
@@ -231,7 +263,7 @@ function AnalyzeContent() {
                       <CardContent className="p-4 flex flex-col justify-center">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Avg Lines/File</span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold text-yellow-500">348</span>
+                          <span className="text-2xl font-bold text-yellow-500">{stats?.avgLines || 0}</span>
                           <span className="text-xs text-muted-foreground truncate">per file</span>
                         </div>
                       </CardContent>
@@ -247,23 +279,26 @@ function AnalyzeContent() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        {[
-                          { lang: "tsx", percent: 55, files: 12, color: "bg-blue-500" },
-                          { lang: "yaml", percent: 9, files: 2, color: "bg-purple-500" },
-                          { lang: "css", percent: 9, files: 2, color: "bg-pink-500" },
-                          { lang: "json", percent: 9, files: 2, color: "bg-yellow-500" },
-                          { lang: "ts", percent: 9, files: 2, color: "bg-blue-400" },
-                          { lang: "md", percent: 5, files: 1, color: "bg-green-500" },
-                          { lang: "gitignore", percent: 5, files: 1, color: "bg-slate-500" },
-                        ].map((item) => (
-                          <div key={item.lang} className="space-y-1">
+                        {stats?.langs?.slice(0, 7).map(([lang, count]: [string, number]) => {
+                          const tot = stats?.langs.reduce((s: number, [, n]: [string, number]) => s + n, 0);
+                          const pct = Math.round(count / tot * 100);
+                          return (
+                          <div key={lang} className="space-y-1">
                             <div className="flex justify-between text-sm">
-                              <span className="font-medium text-foreground">{item.lang}</span>
-                              <span className="text-muted-foreground">{item.percent}% <span className="text-xs">({item.files} files)</span></span>
+                              <span className="font-medium text-foreground">{lang}</span>
+                              <span className="text-muted-foreground">{pct}% <span className="text-xs">({count} files)</span></span>
                             </div>
-                            <Progress value={item.percent} indicatorColor={item.color} className="h-2" />
+                            <Progress value={pct} indicatorColor={pct > 50 ? "bg-blue-500" : "bg-purple-500"} className="h-2" />
                           </div>
-                        ))}
+                          );
+                        })}
+                        {!stats?.langs && (
+                            <div className="flex flex-col gap-4">
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-full" />
+                            </div>
+                        )}
                       </CardContent>
                     </Card>
 
@@ -285,23 +320,24 @@ function AnalyzeContent() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {[
-                                { file: "app/components/TaskSection.tsx", funcs: 10, comp: "LOW" },
-                                { file: "app/dashboard/stats/page.tsx", funcs: 6, comp: "LOW" },
-                                { file: "app/dashboard/page.tsx", funcs: 5, comp: "LOW" },
-                                { file: "app/components/ThemeProvider.tsx", funcs: 3, comp: "LOW" },
-                                { file: "app/components/Calendar.tsx", funcs: 2, comp: "LOW" },
-                                { file: "app/components/ContributionGraph.tsx", funcs: 2, comp: "LOW" },
-                                { file: "app/login/page.tsx", funcs: 2, comp: "LOW" },
-                              ].map((row) => (
-                                <TableRow key={row.file}>
-                                  <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={row.file}>{row.file}</TableCell>
-                                  <TableCell className="text-right font-medium">{row.funcs}</TableCell>
-                                  <TableCell className="text-right">
-                                    <Badge variant="outline" className="text-green-500 border-green-500/20">{row.comp}</Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {(() => {
+                                  const fnByFile = functions?.reduce((a: any, f: any) => { a[f.file] = (a[f.file] || 0) + 1; return a; }, {});
+                                  const topFnFiles = Object.entries(fnByFile || {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 8);
+                                  return topFnFiles.map(([file, count]: [string, any]) => (
+                                    <TableRow key={file}>
+                                      <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={file}>{file}</TableCell>
+                                      <TableCell className="text-right font-medium">{count}</TableCell>
+                                      <TableCell className="text-right">
+                                        <Badge variant="outline" className={cn(
+                                            "border-border/30",
+                                            count > 20 ? "text-red-500" : count > 10 ? "text-yellow-500" : "text-green-500"
+                                        )}>
+                                            {count > 20 ? 'HIGH' : count > 10 ? 'MED' : 'LOW'}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  ));
+                              })()}
                             </TableBody>
                           </Table>
                         </div>
@@ -328,22 +364,17 @@ function AnalyzeContent() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {[
-                              { file: "pnpm-lock.yaml", lines: "4,414", size: "141.6KB", funcs: 0 },
-                              { file: "app/dashboard/stats/page.tsx", lines: "576", size: "30.6KB", funcs: 6 },
-                              { file: "app/components/TaskSection.tsx", lines: "581", size: "22.1KB", funcs: 10 },
-                              { file: "app/components/ContributionGraph.tsx", lines: "310", size: "15.0KB", funcs: 2 },
-                              { file: "app/time/page.tsx", lines: "265", size: "10.7KB", funcs: 1 },
-                              { file: "app/dashboard/page.tsx", lines: "233", size: "9.4KB", funcs: 5 },
-                              { file: "src/index.css", lines: "346", size: "6.6KB", funcs: 0 },
-                            ].map((row) => (
-                              <TableRow key={row.file}>
-                                <TableCell className="font-mono text-xs text-primary/80 truncate max-w-[300px]" title={row.file}>{row.file}</TableCell>
-                                <TableCell className="text-right font-medium">{row.lines}</TableCell>
-                                <TableCell className="text-right text-muted-foreground">{row.size}</TableCell>
-                                <TableCell className="text-right font-medium">{row.funcs}</TableCell>
-                              </TableRow>
-                            ))}
+                            {(() => {
+                                // This needs access to window.FILES which might not be in state
+                                // For now we'll just show what we can from stats
+                                return (
+                                    <TableRow>
+                                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                                            View complete file details in the Files tab
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })()}
                           </TableBody>
                         </Table>
                       </div>
@@ -368,129 +399,47 @@ function AnalyzeContent() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {[
-                            { ext: ".tsx", files: 12, lines: "2,413", size: "102.6KB" },
-                            { ext: ".yaml", files: 2, lines: "4,420", size: "141.7KB" },
-                            { ext: ".css", files: 2, lines: "674", size: "12.4KB" },
-                            { ext: ".json", files: 2, lines: "67", size: "1.3KB" },
-                            { ext: ".ts", files: 2, lines: "16", size: "0.6KB" },
-                            { ext: ".md", files: 1, lines: "37", size: "1.4KB" },
-                            { ext: ".gitignore", files: 1, lines: "32", size: "0.3KB" },
-                          ].map((row) => (
-                            <TableRow key={row.ext}>
-                              <TableCell className="font-mono font-medium">{row.ext}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{row.files}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{row.lines}</TableCell>
-                              <TableCell className="text-right text-muted-foreground">{row.size}</TableCell>
+                          {Object.entries(stats?.extDetail || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 10).map(([ext, d]: [string, any]) => (
+                            <TableRow key={ext}>
+                              <TableCell className="font-mono font-medium">.{ext}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{d.count}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{d.lines.toLocaleString()}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{(d.size / 1024).toFixed(1)}KB</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </CardContent>
                   </Card>
-
-                  {/* Original overview ends here */}
                 </div>
               )}
 
-              {/* ARCHITECTURE DIAGRAM / FILES VIEW */}
+              {/* DYNAMIC FILE TREE VIEW */}
               {activeTab === "files" && (
                 <div className="p-6 space-y-6 max-w-6xl mx-auto">
                   <Card className="bg-card overflow-hidden">
                     <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border/50">
                       <CardTitle className="text-xl flex items-center gap-2">
                         <FolderTree className="h-6 w-6 text-primary" />
-                        Codebase Architecture Diagram
+                        Repository Structure
                       </CardTitle>
-                      <p className="text-sm text-muted-foreground pt-1">High-level visual representation of the repository's modular structure.</p>
+                      <p className="text-sm text-muted-foreground pt-1">Full recursive file and folder tree of the analyzed codebase.</p>
                     </CardHeader>
-                    <CardContent className="pt-12 pb-16 overflow-x-auto custom-scrollbar">
-                      <div className="relative flex flex-col items-center min-w-[750px]">
-                          
-                        {/* ROOT */}
-                        <div className="flex flex-col items-center z-10">
-                          <div className="bg-background border-2 border-primary text-foreground px-6 py-4 rounded-2xl shadow-[0_0_20px_rgba(var(--primary),0.1)] flex flex-col items-center min-w-[200px]">
-                            <Globe className="h-6 w-6 text-primary mb-2" />
-                            <span className="font-bold tracking-wide">Next.js Application</span>
-                            <span className="text-xs text-muted-foreground font-mono mt-1 bg-muted px-2 py-0.5 rounded">/</span>
-                          </div>
-                          <div className="w-px h-12 bg-border"></div>
-                        </div>
-
-                        {/* HORIZONTAL CONNECTOR TRUNK */}
-                        <div className="w-[500px] h-px bg-border"></div>
-                        <div className="flex justify-between w-[500px]">
-                           <div className="w-px h-8 bg-border"></div>
-                           <div className="w-px h-8 bg-border"></div>
-                           <div className="w-px h-8 bg-border"></div>
-                        </div>
-
-                        {/* LEVEL 2 NODES */}
-                        <div className="flex justify-between w-[700px] z-10 mt-[-1px]">
-                          
-                          {/* Frontend Node */}
-                          <div className="flex flex-col items-center w-[220px]">
-                            <div className="bg-card border border-border hover:border-blue-500/50 hover:shadow-lg transition-all w-full p-4 rounded-xl shadow-sm">
-                              <div className="flex items-center gap-2 mb-4 text-blue-500">
-                                 <LayoutDashboard className="h-5 w-5" />
-                                 <span className="font-bold text-foreground">App Router (UI)</span>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex justify-between items-center text-xs bg-muted/40 px-2 py-1.5 rounded-md border border-border/50">
-                                  <span className="font-mono text-muted-foreground">app/</span>
-                                  <Badge variant="secondary" className="text-[9px] font-semibold">14 Files</Badge>
-                                </div>
-                                <div className="flex justify-between items-center text-xs bg-muted/40 px-2 py-1.5 rounded-md border border-border/50">
-                                  <span className="font-mono text-muted-foreground">components/</span>
-                                  <Badge variant="secondary" className="text-[9px] font-semibold">8 Files</Badge>
-                                </div>
-                              </div>
+                    <CardContent className="p-4 overflow-x-auto custom-scrollbar min-h-[500px]">
+                        <div 
+                          className="space-y-0.5"
+                          id="tree-display"
+                          dangerouslySetInnerHTML={{ 
+                            __html: typeof document !== "undefined" ? document.getElementById('ltree-body')?.innerHTML || "" : "" 
+                          }}
+                        />
+                        {!full && (
+                            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground italic">
+                                <p>Analysis results not loaded.</p>
                             </div>
-                          </div>
-
-                          {/* Logic Node */}
-                          <div className="flex flex-col items-center w-[220px]">
-                            <div className="bg-card border border-border hover:border-green-500/50 hover:shadow-lg transition-all w-full p-4 rounded-xl shadow-sm">
-                              <div className="flex items-center gap-2 mb-4 text-green-500">
-                                 <Code2 className="h-5 w-5" />
-                                 <span className="font-bold text-foreground">Analysis Engine</span>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex justify-between items-center text-xs bg-muted/40 px-2 py-1.5 rounded-md border border-border/50">
-                                  <span className="font-mono text-muted-foreground">public/logic.js</span>
-                                  <Badge variant="outline" className="text-[9px] border-green-500/30 text-green-500 font-semibold bg-green-500/5">Script</Badge>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Configs Node */}
-                          <div className="flex flex-col items-center w-[220px]">
-                            <div className="bg-card border border-border hover:border-purple-500/50 hover:shadow-lg transition-all w-full p-4 rounded-xl shadow-sm">
-                              <div className="flex items-center gap-2 mb-4 text-purple-500">
-                                 <File className="h-5 w-5" />
-                                 <span className="font-bold text-foreground">Configuration</span>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex justify-between items-center text-xs bg-muted/40 px-2 py-1.5 rounded-md border border-border/50">
-                                  <span className="font-mono text-muted-foreground">package.json</span>
-                                  <Badge variant="secondary" className="text-[9px] font-semibold">Node</Badge>
-                                </div>
-                                <div className="flex justify-between items-center text-xs bg-muted/40 px-2 py-1.5 rounded-md border border-border/50">
-                                  <span className="font-mono text-muted-foreground">tailwind.config.mjs</span>
-                                  <Badge variant="secondary" className="text-[9px] font-semibold">CSS</Badge>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                        </div>
-
-                      </div>
+                        )}
                     </CardContent>
                   </Card>
-                  
-                  {/* End of architecture diagram node list */}
                 </div>
               )}
 
@@ -530,7 +479,7 @@ function AnalyzeContent() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-4 pt-0">
-                        <div className="text-2xl font-bold">35</div>
+                        <div className="text-2xl font-bold">{functions?.length || 0}</div>
                       </CardContent>
                     </Card>
                     <Card className="bg-card">
@@ -541,7 +490,7 @@ function AnalyzeContent() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-4 pt-0">
-                        <div className="text-2xl font-bold">3</div>
+                        <div className="text-2xl font-bold">{functions?.filter((f: any) => f.lang === 'class').length || 0}</div>
                       </CardContent>
                     </Card>
                     <Card className="bg-card">
@@ -552,7 +501,7 @@ function AnalyzeContent() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-4 pt-0">
-                        <div className="text-2xl font-bold text-yellow-500">5</div>
+                        <div className="text-2xl font-bold text-yellow-500">{functions?.filter((f: any) => (f.size || 0) > 30).length || 0}</div>
                       </CardContent>
                     </Card>
                     <Card className="bg-card">
@@ -563,7 +512,7 @@ function AnalyzeContent() {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="p-4 pt-0">
-                        <div className="text-2xl font-bold">12</div>
+                        <div className="text-2xl font-bold">{functions?.filter((f: any) => f.lang === 'async').length || 0}</div>
                       </CardContent>
                     </Card>
                   </div>
@@ -584,24 +533,28 @@ function AnalyzeContent() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          <TableRow>
-                            <TableCell className="font-mono text-sm font-medium">AnalyzeContent</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">app/analyze/page.tsx</TableCell>
-                            <TableCell className="text-right text-destructive font-bold">450</TableCell>
-                            <TableCell className="text-right"><Badge variant="destructive">HIGH</Badge></TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-mono text-sm font-medium">processRepoData</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">public/logic.js</TableCell>
-                            <TableCell className="text-right text-yellow-500 font-bold">85</TableCell>
-                            <TableCell className="text-right"><Badge variant="outline" className="text-yellow-500 border-yellow-500/20">MED</Badge></TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-mono text-sm font-medium">extractFunctions</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">public/logic.js</TableCell>
-                            <TableCell className="text-right text-yellow-500 font-bold">62</TableCell>
-                            <TableCell className="text-right"><Badge variant="outline" className="text-yellow-500 border-yellow-500/20">MED</Badge></TableCell>
-                          </TableRow>
+                          {functions?.filter((f: any) => (f.size || 0) > 30).sort((a: any, b: any) => (b.size || 0) - (a.size || 0)).slice(0, 15).map((f: any) => (
+                            <TableRow key={f.file + f.name + f.line}>
+                                <TableCell className="font-mono text-sm font-medium">{f.name}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]" title={f.file}>{f.file}</TableCell>
+                                <TableCell className={cn(
+                                    "text-right font-bold",
+                                    (f.size || 0) > 80 ? "text-red-500" : "text-yellow-500"
+                                )}>{f.size || 0}</TableCell>
+                                <TableCell className="text-right">
+                                    <Badge variant={ (f.size || 0) > 80 ? "destructive" : "outline"} className={ (f.size || 0) <= 80 ? "text-yellow-500 border-yellow-500/20" : ""}>
+                                        {(f.size || 0) > 80 ? 'HIGH' : 'MED'}
+                                    </Badge>
+                                </TableCell>
+                            </TableRow>
+                          ))}
+                          {functions?.filter((f: any) => (f.size || 0) > 30).length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                                    No large functions detected.
+                                </TableCell>
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </CardContent>
@@ -621,61 +574,45 @@ function AnalyzeContent() {
                     </div>
                     <div className="flex gap-6">
                       <div className="text-center">
-                        <div className="text-3xl font-bold text-destructive">5</div>
+                        <div className="text-3xl font-bold text-destructive">{duplicates?.length || 0}</div>
                         <div className="text-xs uppercase tracking-widest text-muted-foreground font-semibold mt-1">Duplicates</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-3xl font-bold">12%</div>
-                        <div className="text-xs uppercase tracking-widest text-muted-foreground font-semibold mt-1">Waste</div>
+                        <div className="text-3xl font-bold">{stats?.files ? Math.round(([...new Set(duplicates?.flatMap(d => d.files))].length / stats.files) * 100) : 0}%</div>
+                        <div className="text-xs uppercase tracking-widest text-muted-foreground font-semibold mt-1">Affected</div>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <Card className="border-border">
+                    {duplicates?.map((d: any, i: number) => (
+                    <Card key={i} className="border-border">
                       <CardHeader className="bg-muted/30 pb-4">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-mono flex items-center gap-2">
                             <Copy className="h-4 w-4 text-muted-foreground" />
-                            CardComponent Block
+                            Snippet #{i+1}
                           </CardTitle>
-                          <Badge variant="secondary">Found in 2 files</Badge>
+                          <Badge variant="secondary">Found in {d.files?.length || 0} files</Badge>
                         </div>
-                        <div className="flex gap-2 mt-2">
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">app/dashboard/page.tsx</Badge>
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">app/settings/page.tsx</Badge>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {d.files?.map((f: string) => (
+                            <Badge key={f} variant="outline" className="text-[10px] text-muted-foreground">{f}</Badge>
+                          ))}
                         </div>
                       </CardHeader>
                       <CardContent className="p-0">
                         <pre className="p-4 text-xs font-mono bg-background overflow-x-auto text-primary/80">
-{`export function CustomCard({ title, value }) {
-  return (
-    <div className="p-4 border rounded-lg shadow-sm bg-card hover:bg-muted/50 transition">
-      <h3 className="text-sm font-semibold text-muted-foreground">{title}</h3>
-      <div className="text-2xl font-bold mt-2">{value}</div>
-    </div>
-  )
-}`}
+                            {d.snippet}
                         </pre>
                       </CardContent>
                     </Card>
-
-                    <Card className="border-border">
-                      <CardHeader className="bg-muted/30 pb-4">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm font-mono flex items-center gap-2">
-                            <Copy className="h-4 w-4 text-muted-foreground" />
-                            FormatDate Helper
-                          </CardTitle>
-                          <Badge variant="secondary">Found in 3 files</Badge>
+                    ))}
+                    {duplicates?.length === 0 && (
+                        <div className="text-center py-12 bg-muted/20 rounded-xl border border-dashed border-border">
+                            <p className="text-muted-foreground italic">No significant code duplicates detected.</p>
                         </div>
-                        <div className="flex gap-2 mt-2">
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">app/utils/date.ts</Badge>
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">app/components/Calendar.tsx</Badge>
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground">app/time/page.tsx</Badge>
-                        </div>
-                      </CardHeader>
-                    </Card>
+                    )}
                   </div>
                 </div>
               )}
@@ -687,37 +624,40 @@ function AnalyzeContent() {
                     <div className="bg-primary/10 p-3 rounded-lg">
                       <Bot className="h-6 w-6 text-primary" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h2 className="text-lg font-bold">Executive Summary</h2>
-                      <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                        This codebase appears to be a modern React dashboard application utilizing Next.js (App Router) and Tailwind CSS alongside Shadcn UI components. Architecturally, it is well-structured regarding UI separation, but lacks central state management for the complex analysis features, leading to tight coupling in &lt;AnalyzeContent&gt;.
-                      </p>
+                      <div className="text-sm text-foreground mt-2 leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                        {aiResult ? (
+                            <div className="whitespace-pre-wrap">{aiResult.split('##')[1]?.split('\n').filter((l:string)=>l.trim()).join('\n') || "Summary unavailable"}</div>
+                        ) : (
+                            <div className="space-y-2">
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-3/4" />
+                            </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-primary">
-                        <AlertTriangle className="h-5 w-5" /> Focus Areas
+                        <AlertTriangle className="h-5 w-5" /> Full Analysis Report
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      
-                      <div className="space-y-2 border-l-2 border-primary/20 pl-4 py-1">
-                        <h4 className="font-semibold text-sm">1. Component Bloat</h4>
-                        <p className="text-sm text-muted-foreground">The `page.tsx` within the analysis route is exceeding recommended line counts (&gt;400 lines). Extract the layout elements (sidebar, stat cards, chat panel) into discrete components.</p>
-                      </div>
-
-                      <div className="space-y-2 border-l-2 border-destructive/20 pl-4 py-1">
-                        <h4 className="font-semibold text-sm">2. Vanilla JS Interop</h4>
-                        <p className="text-sm text-muted-foreground">Relying on `logic.js` injecting raw HTML into DOM via IDs (`document.getElementById`) bypasses React's virtual DOM, creating immense potential for state desync and memory leaks.</p>
-                      </div>
-
-                      <div className="space-y-2 border-l-2 border-yellow-500/20 pl-4 py-1">
-                        <h4 className="font-semibold text-sm">3. Duplicate Shared Components</h4>
-                        <p className="text-sm text-muted-foreground">Data visualizations (like `Language Breakdown`) are hardcoded across multiple views. Move these into a `components/charts` directory.</p>
-                      </div>
-
+                    <CardContent>
+                         <div className="text-sm text-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                            {aiResult ? (
+                                <div className="whitespace-pre-wrap">{aiResult}</div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-2/3" />
+                                </div>
+                            )}
+                         </div>
                     </CardContent>
                   </Card>
                   

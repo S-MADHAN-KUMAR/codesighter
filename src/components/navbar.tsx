@@ -14,9 +14,10 @@ interface NavbarProps {
   isLoading?: boolean;
   progress?: number;
   statusText?: string;
+  repoName?: string;
 }
 
-export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusText }: NavbarProps) {
+export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusText, repoName }: NavbarProps) {
   const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
 
@@ -36,6 +37,11 @@ export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusTex
       <Link href="/" className="flex items-center gap-2 mr-4 cursor-pointer">
         <img className="w-10 h-10 object-contain" src="/ai.png" alt="Logo" />
         <span className="font-bold text-[15px] tracking-wide text-foreground uppercase">CodeSighter</span>
+        {repoName && (
+          <span className="ml-2 text-xs text-muted-foreground border-l pl-2 border-border/50 truncate max-w-[200px] hidden md:inline">
+            github.com/{repoName}
+          </span>
+        )}
       </Link>
       
       <nav className="flex items-center gap-4">

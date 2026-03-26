@@ -141,8 +141,10 @@ async function run(){
     prog(24,'Found '+flist.length+' files. Downloading…');
 
     // Download content — use raw.githubusercontent.com (no CORS issues)
-    const BATCH=15;
+    const BATCH=5;
     FILES=[];
+    const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
     for(let i=0;i<flist.length;i+=BATCH){
       const batch=flist.slice(i,i+BATCH);
       const results=await Promise.all(batch.map(async f=>{
@@ -157,6 +159,7 @@ async function run(){
       const pct=24+Math.round((Math.min(i+BATCH,flist.length)/flist.length)*36);
       prog(pct,'Reading files ('+Math.min(i+BATCH,flist.length)+'/'+flist.length+')…');
       lf(results.map(r=>'📄 '+r.path).join('\n'));
+      if(i+BATCH < flist.length) await delay(200); 
     }
 
     prog(62,'Computing stats…');
@@ -196,6 +199,17 @@ async function run(){
     parseIssues();
     setStatus('done');
     renderCenter();
+    
+    // Notify React that analysis is complete
+    window.dispatchEvent(new CustomEvent('analysis-complete', { 
+      detail: { 
+        stats: STATS, 
+        functions: FUNCTIONS, 
+        duplicates: DUPLICATES,
+        aiResult: AI_RESULT,
+        full: FULL
+      } 
+    }));
     const wb=document.querySelector('#chat-msgs .bubble');
     if(wb) wb.textContent='✅ Analysis of '+FULL+' complete! Read '+FILES.length+' files, found '+FUNCTIONS.length+' functions, '+DUPLICATES.length+' duplicates. Ask me anything!';
 
@@ -659,6 +673,17 @@ function loadLastAnalysis(){
       const bubble = msgs.querySelector('.bubble');
       if(bubble) bubble.textContent='📂 Loaded saved analysis of '+FULL+'. '+FILES.length+' files, '+FUNCTIONS.length+' functions. Ask me anything!';
     }
+    
+    // Notify React that analysis is loaded
+    window.dispatchEvent(new CustomEvent('analysis-complete', { 
+      detail: { 
+        stats: STATS, 
+        functions: FUNCTIONS, 
+        duplicates: DUPLICATES,
+        aiResult: AI_RESULT,
+        full: FULL
+      } 
+    }));
   }catch(e){
     alert('Failed to load saved analysis: '+e.message);
   }

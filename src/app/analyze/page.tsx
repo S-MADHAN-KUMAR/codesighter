@@ -150,18 +150,20 @@ function AnalyzeContent() {
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/10 pointer-events-none" />
 
       {/* Hidden inputs to populate from URL logic */}
-      <Input id="rurl" type="hidden" />
-      <Input id="gtoken" type="hidden" />
-      <Button id="abtn" style={{ display: 'none' }}></Button>
-      <div id="rbar-url" style={{ display: 'none' }}></div>
-      <div id="rstatus" style={{ display: 'none' }}></div>
-      <div id="ltab-tree" style={{ display: 'none' }}></div>
-      <div id="ltab-issues" style={{ display: 'none' }}></div>
-      <div id="ltree-body" style={{ display: 'none' }}></div>
-      <div id="lissues-body" style={{ display: 'none' }}></div>
-      <div id="chat-msgs" style={{ display: 'none' }}></div>
-      <textarea id="cinput" style={{ display: 'none' }}></textarea>
-      <button id="sbtn" style={{ display: 'none' }}></button>
+      <div style={{ display: 'none' }}>
+        <Input id="rurl" type="hidden" />
+        <Input id="gtoken" type="hidden" />
+        <Button id="abtn" style={{ display: 'none' }}></Button>
+        <div id="rbar-url" style={{ display: 'none' }}></div>
+        <div id="rstatus" style={{ display: 'none' }}></div>
+        <div id="ltab-tree" style={{ display: 'none' }}></div>
+        <div id="ltab-issues" style={{ display: 'none' }}></div>
+        <div id="ltree-body" style={{ display: 'none' }}></div>
+        <div id="lissues-body" style={{ display: 'none' }}></div>
+        <div id="chat-msgs" style={{ display: 'none' }}></div>
+        <textarea id="cinput" style={{ display: 'none' }}></textarea>
+        <button id="sbtn" style={{ display: 'none' }}></button>
+      </div>
 
       {/* NATIVE LOADING OVERLAY */}
       <div id="loading" className="flex flex-col items-center justify-center inset-0 absolute z-50 bg-background/80 backdrop-blur-sm" style={{ display: 'none' }}>

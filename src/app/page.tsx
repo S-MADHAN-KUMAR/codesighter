@@ -1,7 +1,7 @@
 "use client";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,34 +27,36 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
 
   const { theme, toggleTheme } = useTheme();
+  const [lastInfo, setLastInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('codesighter_last');
+      if (raw) {
+        const d = JSON.parse(raw);
+        const info = `${d.full} • ${d.stats?.files ?? 0} files • ${(d.stats?.lines ?? 0).toLocaleString()} lines`;
+        setLastInfo(info);
+        const btn = document.getElementById('last-analysis-btn');
+        if (btn) btn.style.display = 'block';
+        const el = document.getElementById('last-analysis-info');
+        if (el) el.textContent = info;
+      }
+      const savedTok = localStorage.getItem('codesighter_token');
+      if (savedTok) {
+        const ti = document.getElementById('gtoken') as HTMLInputElement | null;
+        if (ti) ti.value = savedTok;
+      }
+    } catch {}
+  }, []);
 
   const handleRun = () => {
     const url = (document.getElementById("rurl") as HTMLInputElement)?.value;
     const token = (document.getElementById("gtoken") as HTMLInputElement)?.value;
 
     if (!url) return;
-
-    setIsLoading(true);
-    setProgress(0);
-
-
-    // Simulate progress with phases
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(progressInterval);
-          return 95;
-        }
-        const increment = Math.random() * 8 + 2;
-        const newProgress = prev + increment;
-
-
-
-        return Math.min(newProgress, 95);
-      });
-    }, 300);
-
     if (token) localStorage.setItem('codesighter_token', token);
+    // Don't simulate progress here — analyze page shows real loader.
+    // Brief loading flash on home is the glitch: navigate immediately without home overlay.
     router.push(`/analyze?url=${encodeURIComponent(url)}`);
   };
 
@@ -70,33 +72,18 @@ export default function Home() {
 
   return (
     <>
-      {/* Loading Overlay - Simplified to match AnalyzePage design */}
-      {isLoading && (
+      {/* Home no longer shows its own loader — analyze page handles real progress.
+          Keep minimal inline loader on button (isLoading kept for future use) */}
+      {false && isLoading && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="flex flex-col items-center justify-center p-12 max-w-md w-full bg-card border border-border/50 shadow-2xl rounded-3xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50"></div>
-            
+          <div className="flex flex-col items-center justify-center p-12 max-w-md w-full bg-card border border-border/50 shadow-2xl rounded-3xl relative overflow-hidden">
             <div className="w-20 h-20 relative flex items-center justify-center mb-8">
               <div className="absolute inset-0 border-[6px] border-primary/10 rounded-full"></div>
-              <div className="absolute inset-0 border-[6px] border-primary border-t-transparent rounded-full animate-spin" style={{ 
-                clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%)`,
-                transform: `rotate(${progress * 3.6}deg)`
-              }}></div>
-              <img src="/ai.png" className="h-10 w-10 animate-pulse object-contain" />
+              <div className="absolute inset-0 border-[6px] border-primary border-t-transparent rounded-full animate-spin"></div>
+              <img src="/ai.png" alt="loading" className="h-10 w-10 animate-pulse object-contain" />
             </div>
-            
             <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground">Analyzing Repository</h2>
-            <p className="text-sm text-muted-foreground font-medium text-center mb-8 h-5">Initializing analyzer...</p>
-            
-            <div className="w-full bg-muted rounded-full h-2.5 mb-2 overflow-hidden border border-border/50 relative">
-              <div className="bg-primary h-full rounded-full transition-all duration-300 relative shadow-[0_0_12px_rgba(var(--primary),0.6)]" style={{ width: `${progress}%` }}>
-                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-              </div>
-            </div>
-            <div className="flex justify-between w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">
-              <span>Fetching Code</span>
-              <span>Processing</span>
-            </div>
+            <p className="text-sm text-muted-foreground font-medium text-center mb-8 h-5">Redirecting…</p>
           </div>
         </div>
       )}

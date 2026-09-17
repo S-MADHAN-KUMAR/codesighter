@@ -47,10 +47,20 @@ function AnalyzeContent() {
   const repoUrl = searchParams.get('url');
   const loadParam = searchParams.get('load');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  // Initialize from localStorage synchronously so dashboard shows instantly on reload
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URLSearchParams(window.location.search).get('url');
+      return !!url; // if url present, start in loading state
+    }
+    return false;
+  });
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Initializing…");
   const [activeTab, setActiveTab] = useState("overview");
+  const [treeHtml, setTreeHtml] = useState("");
+  const [issuesHtml, setIssuesHtml] = useState("");
+  const [treeVersion, setTreeVersion] = useState(0);
   
   const [stats, setStats] = useState<any>(null);
   const [functions, setFunctions] = useState<any[]>([]);
@@ -70,19 +80,88 @@ function AnalyzeContent() {
     window.qs?.(e.currentTarget as HTMLElement);
   const handleSendChat = () => window.sendChat?.();
 
+  // Hydrate from localStorage immediately (fixes dashboard empty after reload)
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem('codesighter_last');
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.stats) setStats(d.stats);
+        if (d.functions) setFunctions(d.functions);
+        if (d.duplicates) setDuplicates(d.duplicates);
+        if (d.aiResult) setAiResult(d.aiResult);
+        if (d.full) setFull(d.full);
+        // if we have saved data and no repoUrl param, ensure loading is false
+        if (!repoUrl) setIsLoading(false);
+      }
+    } catch {}
+  }, [repoUrl]);
+
+  // Event-driven updates: listen to logic.js custom events
+  useEffect(() => {
+    const handleStarted = () => {
+      setIsLoading(true);
+      setProgress(0);
+      setStatusText("Initializing…");
+    };
+    const handleProgress = (e: any) => {
+      const { progress: p, status } = e.detail || {};
+      if (typeof p === 'number') setProgress(Math.round(p));
+      if (status) setStatusText(status);
+      // keep loading true unless 100% and we received complete
+      if (typeof p === 'number' && p < 100) setIsLoading(true);
+    };
+    const handlePartial = (e: any) => {
+      const d = e.detail || {};
+      if (d.stats) setStats(d.stats);
+      if (d.functions) setFunctions(d.functions);
+      if (d.duplicates) setDuplicates(d.duplicates);
+      if (d.aiResult !== undefined) setAiResult(d.aiResult);
+      if (d.full) setFull(d.full);
+      // pull tree/issues DOM into React state so tabs render
+      setTimeout(() => {
+        const t = document.getElementById('ltree-body')?.innerHTML || "";
+        const iss = document.getElementById('lissues-body')?.innerHTML || "";
+        if (t) setTreeHtml(t);
+        if (iss) setIssuesHtml(iss);
+      }, 50);
+      setTreeVersion(v => v+1);
+    };
     const handleComplete = (e: any) => {
       const { stats, functions, duplicates, aiResult, full } = e.detail;
-      setStats(stats);
-      setFunctions(functions);
-      setDuplicates(duplicates);
-      setAiResult(aiResult);
-      setFull(full);
+      if (stats) setStats(stats);
+      if (functions) setFunctions(functions);
+      if (duplicates) setDuplicates(duplicates);
+      if (aiResult !== undefined) setAiResult(aiResult);
+      if (full) setFull(full);
+      setProgress(100);
+      setStatusText("Analysis complete");
       setIsLoading(false);
+      setTimeout(() => {
+        const t = document.getElementById('ltree-body')?.innerHTML || "";
+        const iss = document.getElementById('lissues-body')?.innerHTML || "";
+        if (t) setTreeHtml(t);
+        if (iss) setIssuesHtml(iss);
+      }, 50);
+      setTreeVersion(v => v+1);
+    };
+    const handleError = () => {
+      setIsLoading(false);
+      setStatusText("Error");
     };
 
+    window.addEventListener('analysis-started', handleStarted as any);
+    window.addEventListener('analysis-progress', handleProgress as any);
+    window.addEventListener('analysis-partial', handlePartial as any);
     window.addEventListener('analysis-complete', handleComplete as any);
-    return () => window.removeEventListener('analysis-complete', handleComplete as any);
+    window.addEventListener('analysis-error', handleError as any);
+    return () => {
+      window.removeEventListener('analysis-started', handleStarted as any);
+      window.removeEventListener('analysis-progress', handleProgress as any);
+      window.removeEventListener('analysis-partial', handlePartial as any);
+      window.removeEventListener('analysis-complete', handleComplete as any);
+      window.removeEventListener('analysis-error', handleError as any);
+    };
   }, []);
 
   useEffect(() => {
@@ -95,12 +174,34 @@ function AnalyzeContent() {
         const savedToken = localStorage.getItem('codesighter_token');
         if (ti && savedToken) ti.value = savedToken;
 
+        setIsLoading(true);
+        setProgress(1);
+        setStatusText("Starting analysis…");
         window.run();
       } else if (window.loadLastAnalysis) {
-        // Automatically load if no URL but saved data exists, OR if specifically requested via loadParam
         const hasSaved = localStorage.getItem('codesighter_last');
         if (loadParam === 'true' || (!repoUrl && hasSaved)) {
+          // Ensure UI reflects loaded state (no spinner flash)
           window.loadLastAnalysis();
+          // If loadLastAnalysis succeeded, it will fire analysis-complete; otherwise keep hidden
+          const raw = localStorage.getItem('codesighter_last');
+          if (raw) {
+            try {
+              const d = JSON.parse(raw);
+              setStats(d.stats); setFunctions(d.functions); setDuplicates(d.duplicates); setAiResult(d.aiResult); setFull(d.full);
+              setIsLoading(false);
+              setProgress(100);
+              setStatusText("Loaded saved analysis");
+              setTimeout(() => {
+                const t = document.getElementById('ltree-body')?.innerHTML || "";
+                const iss = document.getElementById('lissues-body')?.innerHTML || "";
+                if (t) setTreeHtml(t);
+                if (iss) setIssuesHtml(iss);
+              }, 100);
+            } catch {}
+          }
+        } else if (!repoUrl && !hasSaved) {
+          setIsLoading(false);
         }
       }
     };
@@ -112,37 +213,35 @@ function AnalyzeContent() {
       }
     }, 100);
 
-    return () => clearInterval(itv);
+    // fallback: if script never loads within 3s, stop spinner
+    const timeout = setTimeout(() => clearInterval(itv), 3000);
+
+    return () => { clearInterval(itv); clearTimeout(timeout); };
   }, [repoUrl, loadParam]);
 
-  // Listen for loading events
+  // Keep DOM progress bar in sync for logic.js compatibility, and observe tree/issues changes
   useEffect(() => {
-    const updateProgress = () => {
-      const loadingEl = document.getElementById('loading');
-      const lbarEl = document.getElementById('lbar');
-      const lstatusEl = document.getElementById('lstatus');
-      const analyzerEl = document.getElementById('analyzer');
-      
-      if (loadingEl && lbarEl && lstatusEl && analyzerEl) {
-        const isLoadingVisible = loadingEl.style.display !== 'none';
-        setIsLoading(isLoadingVisible);
-        
-        if (isLoadingVisible) {
-          const width = lbarEl.style.width || '0%';
-          setProgress(parseInt(width) || 0);
-          setStatusText(lstatusEl.textContent || 'Initializing…');
-        }
-        analyzerEl.style.display = 'flex';
+    const lbar = document.getElementById('lbar');
+    if (lbar) lbar.style.width = progress + '%';
+    const lstatus = document.getElementById('lstatus');
+    if (lstatus && isLoading) lstatus.textContent = statusText;
+  }, [progress, statusText, isLoading]);
 
-      }
-    };
-
-    // Check periodically for loading state changes
-    const interval = setInterval(updateProgress, 100);
-    updateProgress();
-
-    return () => clearInterval(interval);
-  }, []);
+  // Observe DOM mutations for tree/issues when logic.js updates them without events
+  useEffect(() => {
+    const tEl = document.getElementById('ltree-body');
+    const iEl = document.getElementById('lissues-body');
+    if (!tEl && !iEl) return;
+    const obs = new MutationObserver(() => {
+      const t = tEl?.innerHTML || "";
+      const iss = iEl?.innerHTML || "";
+      if (t && t !== treeHtml) setTreeHtml(t);
+      if (iss && iss !== issuesHtml) setIssuesHtml(iss);
+    });
+    if (tEl) obs.observe(tEl, { childList: true, subtree: true, characterData: true });
+    if (iEl) obs.observe(iEl, { childList: true, subtree: true, characterData: true });
+    return () => obs.disconnect();
+  }, [treeHtml, issuesHtml]);
 
   return (
     <div className="relative w-full h-full min-h-screen bg-background flex flex-col overflow-hidden">
@@ -165,34 +264,38 @@ function AnalyzeContent() {
         <button id="sbtn" style={{ display: 'none' }}></button>
       </div>
 
-      {/* NATIVE LOADING OVERLAY */}
-      <div id="loading" className="flex flex-col items-center justify-center inset-0 absolute z-50 bg-background/80 backdrop-blur-sm" style={{ display: 'none' }}>
-        <div className="flex flex-col items-center justify-center p-12 max-w-md w-full bg-card border border-border/50 shadow-2xl rounded-3xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50"></div>
-          
-          <div className="w-20 h-20 relative flex items-center justify-center mb-8">
-            <div className="absolute inset-0 border-[6px] border-primary/10 rounded-full"></div>
-            <div className="absolute inset-0 border-[6px] border-primary border-t-transparent rounded-full animate-spin"></div>
-            <img src="/ai.png" className="h-10 w-10 animate-pulse object-contain" />
-          </div>
-          
-          <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground">Analyzing Repository</h2>
-          <p className="text-sm text-muted-foreground font-medium text-center mb-8 h-5" id="lstatus">Initializing analyzer...</p>
-          
-          <div className="w-full bg-muted rounded-full h-2.5 mb-2 overflow-hidden border border-border/50 relative">
-            <div id="lbar" className="bg-primary h-full rounded-full transition-all duration-300 relative shadow-[0_0_12px_rgba(var(--primary),0.6)]" style={{ width: '0%' }}>
-              <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+      {/* LOADING OVERLAY - React-controlled, no display:none glitch */}
+      {isLoading && (
+        <div id="loading" className="flex flex-col items-center justify-center inset-0 absolute z-50 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="flex flex-col items-center justify-center p-12 max-w-md w-full bg-card border border-border/50 shadow-2xl rounded-3xl relative overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50"></div>
+            
+            <div className="w-20 h-20 relative flex items-center justify-center mb-8">
+              <div className="absolute inset-0 border-[6px] border-primary/10 rounded-full"></div>
+              <div className="absolute inset-0 border-[6px] border-primary border-t-transparent rounded-full animate-spin"></div>
+              <img src="/ai.png" alt="loading" className="h-10 w-10 animate-pulse object-contain" />
+            </div>
+            
+            <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground">Analyzing Repository</h2>
+            <p className="text-sm text-muted-foreground font-medium text-center mb-8 h-5" id="lstatus">{statusText}</p>
+            
+            <div className="w-full bg-muted rounded-full h-2.5 mb-2 overflow-hidden border border-border/50 relative">
+              <div id="lbar" className="bg-primary h-full rounded-full transition-all duration-300 relative shadow-[0_0_12px_rgba(var(--primary),0.6)]" style={{ width: `${progress}%` }}>
+                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="flex justify-between w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">
+              <span>{progress}%</span>
+              <span>Processing</span>
             </div>
           </div>
-          <div className="flex justify-between w-full text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">
-            <span>Fetching Code</span>
-            <span>Processing</span>
-          </div>
         </div>
-      </div>
+      )}
+      {/* hidden compat node for logic.js lfiles */}
+      <div id="lfiles" style={{ display:'none' }}></div>
 
-      {/* ANALYZER UI - Always visible, with progress overlay when loading */}
-      <div id="analyzer" style={{ display: 'none' }} className="flex flex-col h-screen bg-background overflow-hidden relative">
+      {/* ANALYZER UI - always flex, overlay covers it while loading (no display:none flash) */}
+      <div id="analyzer" className="flex flex-col h-screen bg-background overflow-hidden relative">
         
         {/* MAIN CONTENT AREA */}
         <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-muted/10">
@@ -328,6 +431,9 @@ function AnalyzeContent() {
                               {(() => {
                                   const fnByFile = functions?.reduce((a: any, f: any) => { a[f.file] = (a[f.file] || 0) + 1; return a; }, {});
                                   const topFnFiles = Object.entries(fnByFile || {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 8);
+                                  if (!topFnFiles.length) return (
+                                    <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-8">{isLoading ? "Analyzing…" : "No data yet"}</TableCell></TableRow>
+                                  );
                                   return topFnFiles.map(([file, count]: [string, any]) => (
                                     <TableRow key={file}>
                                       <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[200px]" title={file}>{file}</TableCell>
@@ -370,8 +476,6 @@ function AnalyzeContent() {
                           </TableHeader>
                           <TableBody>
                             {(() => {
-                                // This needs access to window.FILES which might not be in state
-                                // For now we'll just show what we can from stats
                                 return (
                                     <TableRow>
                                         <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
@@ -412,6 +516,9 @@ function AnalyzeContent() {
                               <TableCell className="text-right text-muted-foreground">{(d.size / 1024).toFixed(1)}KB</TableCell>
                             </TableRow>
                           ))}
+                          {!stats?.extDetail && (
+                            <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">{isLoading ? "Computing…" : "No data"}</TableCell></TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </CardContent>
@@ -432,13 +539,14 @@ function AnalyzeContent() {
                     </CardHeader>
                     <CardContent className="p-4 overflow-x-auto custom-scrollbar min-h-[500px]">
                         <div 
+                          key={treeVersion}
                           className="space-y-0.5"
                           id="tree-display"
                           dangerouslySetInnerHTML={{ 
-                            __html: typeof document !== "undefined" ? document.getElementById('ltree-body')?.innerHTML || "" : "" 
+                            __html: treeHtml || (typeof document !== "undefined" ? document.getElementById('ltree-body')?.innerHTML || "" : "")
                           }}
                         />
-                        {!full && (
+                        {!full && !treeHtml && (
                             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground italic">
                                 <p>Analysis results not loaded.</p>
                             </div>
@@ -460,10 +568,11 @@ function AnalyzeContent() {
                     </CardHeader>
                     <CardContent>
                       <div 
+                        key={treeVersion}
                         className="bg-muted/30 rounded-lg p-5 font-mono text-sm min-h-[500px] overflow-auto custom-scrollbar"
                         id="render-issues"
                         dangerouslySetInnerHTML={{ 
-                          __html: typeof document !== "undefined" ? document.getElementById('lissues-body')?.innerHTML || "" : "" 
+                          __html: issuesHtml || (typeof document !== "undefined" ? document.getElementById('lissues-body')?.innerHTML || "" : "")
                         }} 
                       />
                     </CardContent>

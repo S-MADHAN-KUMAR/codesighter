@@ -14,12 +14,30 @@ function prog(p,m){
   const s=document.getElementById('lstatus');
   if(b) b.style.width=p+'%';
   if(s) s.textContent=m;
+  try{ window.dispatchEvent(new CustomEvent('analysis-progress',{detail:{progress:p,status:m}})); }catch{}
 }
 function lf(t){
   const f=document.getElementById('lfiles');
   if(f) f.textContent=t;
 }
 function sDisp(id,v){const el=document.getElementById(id);if(el)el.style.display=v}
+function persistAnalysis(partial){
+  try{
+    const saveData={
+      full:FULL,owner:OWNER,repo:REPO,branch:BRANCH,
+      stats:STATS,functions:FUNCTIONS,duplicates:DUPLICATES,
+      aiResult:AI_RESULT,
+      files:FILES.map(f=>({path:f.path,size:f.size,content:(f.content||'').slice(0,2000)})),
+      timestamp:Date.now(),
+      partial: !!partial
+    };
+    localStorage.setItem('codesighter_last',JSON.stringify(saveData));
+    // also dispatch partial so React renders early
+    if(partial){
+      try{ window.dispatchEvent(new CustomEvent('analysis-partial',{detail:saveData})); }catch{}
+    }
+  }catch(e){ console.warn('persistAnalysis failed:',e); }
+}
 function ghH(){
   const tok=(document.getElementById('gtoken')?.value||'').trim();
   const h={'Accept':'application/vnd.github.v3+json','X-GitHub-Api-Version':'2022-11-28'};
@@ -99,6 +117,7 @@ async function run(){
   sDisp('loading','flex');
   sDisp('home','none');
   sDisp('analyzer','flex');
+  try{ window.dispatchEvent(new CustomEvent('analysis-started')); }catch{}
   prog(0,'Initializing Analysis…');
   renderCenter();
 
@@ -173,10 +192,12 @@ async function run(){
     prog(62,'Computing stats…');
     computeStats();
     renderFileTree();
+    // persist immediately after stats so dashboard can render even if next steps fail
+    persistAnalysis(true);
 
-    sDisp('loading','none');
-
-    document.getElementById('rbar-url').textContent='github.com/'+FULL;
+    // keep loader visible — do NOT hide here (moved to end)
+    const rbarEarly=document.getElementById('rbar-url');
+    if(rbarEarly) rbarEarly.textContent='github.com/'+FULL;
     setStatus('scan');
     renderCenter();
 
@@ -185,6 +206,8 @@ async function run(){
     extractFunctions();
     prog(68,'Detecting duplicates…');
     detectDuplicates();
+    // persist early data so dashboard shows before AI finishes
+    persistAnalysis(true);
 
     // Enable chat immediately with what we have
     document.getElementById('cinput').disabled=false;
@@ -197,14 +220,25 @@ async function run(){
       {role:'system',content:'You are CodeSighter, an expert code analyst. Be thorough, specific, structured. Use markdown. Reference file names.'},
       {role:'user',content:buildPrompt()}
     ];
+    let lastPersist = 0;
     await streamLLM(messages,full=>{
       AI_RESULT=full;
       if(CTAB==='ai') renderCenter();
+      // throttle persist every ~1.5s to keep localStorage fresh without hammering
+      const now = Date.now();
+      if(now - lastPersist > 1500){
+        lastPersist = now;
+        persistAnalysis(true);
+      }
     });
 
     parseIssues();
     setStatus('done');
     renderCenter();
+    
+    // hide loader only after everything complete
+    sDisp('loading','none');
+    prog(100,'Analysis complete');
     
     // Notify React that analysis is complete
     window.dispatchEvent(new CustomEvent('analysis-complete', { 
@@ -216,20 +250,13 @@ async function run(){
         full: FULL
       } 
     }));
+    // also dispatch progress 100 so React hides spinner
+    try{ window.dispatchEvent(new CustomEvent('analysis-progress',{detail:{progress:100,status:'Analysis complete'}})); }catch{}
     const wb=document.querySelector('#chat-msgs .bubble');
     if(wb) wb.textContent='✅ Analysis of '+FULL+' complete! Read '+FILES.length+' files, found '+FUNCTIONS.length+' functions, '+DUPLICATES.length+' duplicates. Ask me anything!';
 
-    // Save to localStorage
-    try{
-      const saveData={
-        full:FULL,owner:OWNER,repo:REPO,branch:BRANCH,
-        stats:STATS,functions:FUNCTIONS,duplicates:DUPLICATES,
-        aiResult:AI_RESULT,
-        files:FILES.map(f=>({path:f.path,size:f.size,content:f.content.slice(0,2000)})),
-        timestamp:Date.now()
-      };
-      localStorage.setItem('codesighter_last',JSON.stringify(saveData));
-    }catch(e){console.warn('Could not save to localStorage:',e);}
+    // Final save to localStorage (non-partial)
+    persistAnalysis(false);
 
   }catch(err){
     const l=document.getElementById('loading');
@@ -241,6 +268,8 @@ async function run(){
     const ru=document.getElementById('rbar-url');
     if(ru) ru.textContent='github.com/'+FULL;
     setStatus('err');
+    try{ window.dispatchEvent(new CustomEvent('analysis-error',{detail:{message: err.message}})); }catch{}
+    try{ window.dispatchEvent(new CustomEvent('analysis-progress',{detail:{progress:100,status:'Error: '+err.message}})); }catch{}
     const cb=document.getElementById('cbody');
     if(cb) cb.innerHTML='<div class="ebanner"><strong>❌ '+esc(err.message)+'</strong>'
       +'<br>Things to check:<br>'
@@ -344,16 +373,24 @@ function detectDuplicates(){
   DUPLICATES=DUPLICATES.slice(0,30);
 }
 
-// AI PROMPT
+// AI PROMPT — token-aware, Groq ITPM limit 7000 (~28000 chars). Keep well under.
 function buildPrompt(){
   let ctx='# Repo: '+FULL+' | Branch: '+BRANCH+'\n';
   ctx+='Files: '+STATS.files+' | Folders: '+STATS.folders+' | Lines: '+STATS.lines.toLocaleString()+'\n';
   ctx+='Functions: '+FUNCTIONS.length+' | Duplicates: '+DUPLICATES.length+' | Top lang: '+STATS.topLang+'\n\n';
-  ctx+='## Files\n'+FILES.map(f=>'- '+f.path+' ('+Math.round(f.content.length/1024)+'KB)').join('\n')+'\n\n';
-  let budget=72000;
-  ctx+='## Contents\n';
-  for(const f of FILES){
-    const chunk='### '+f.path+'\n```\n'+f.content.slice(0,3500)+'\n```\n\n';
+  // File list truncated — listing all paths can itself be huge for large repos
+  const fileList = FILES.slice(0, 80).map(f=>'- '+f.path+' ('+Math.round(f.content.length/1024)+'KB)').join('\n');
+  ctx+='## Files (first 80)\n'+fileList+(FILES.length>80 ? `\n...and ${FILES.length-80} more` : '')+'\n\n';
+  // Budget: keep total input ~4000 tokens (~16000 chars) for Groq on_demand 7000 ITPM
+  // Header already ~1k chars, so allocate ~12000 for contents
+  let budget=12000;
+  ctx+='## Contents (truncated for token limit)\n';
+  // Prioritize smaller/more relevant files; take first 20 sorted by path depth then size
+  const sorted = [...FILES].sort((a,b)=> a.path.split('/').length - b.path.split('/').length || a.content.length - b.content.length).slice(0, 25);
+  for(const f of sorted){
+    // 700 chars per file ~175 tokens, 20 files ~3500 tokens
+    const snippet = f.content.slice(0,700).replace(/\s+/g,' ').trim();
+    const chunk='### '+f.path+'\n```\n'+snippet+'\n```\n\n';
     if(budget-chunk.length<0) break;
     ctx+=chunk;budget-=chunk.length;
   }
@@ -368,12 +405,13 @@ function buildPrompt(){
 ## 8. Score & Top 5 Actions — Health score 0-100, priority fixes`;
 }
 
-// LLM STREAMING
+// LLM STREAMING - server handles provider fallback (Groq preferred). Default is Groq qwen/qwen3.8-27b.
 async function streamLLM(messages,onChunk){
   let r;
-  try{r=await fetch(NV,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'meta/llama-3.1-8b-instruct',messages,max_tokens:4096,temperature:0.5,top_p:0.9,stream:true})});}
+  const MODEL = (localStorage.getItem('codesighter_model') || 'qwen/qwen3.8-27b');
+  try{r=await fetch(NV,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,messages,max_tokens:2048,temperature:0.5,top_p:0.9,stream:true})});}
   catch(e){throw new Error('AI API network error: '+e.message);}
-  if(!r.ok){const e=await r.text();throw new Error('AI error '+r.status+': '+e.slice(0,200));}
+  if(!r.ok){const e=await r.text();throw new Error('AI error '+r.status+': '+e.slice(0,800));}
   const reader=r.body.getReader(),dec=new TextDecoder();
   let full='',buf='';
   while(true){
@@ -388,13 +426,14 @@ async function streamLLM(messages,onChunk){
       if(d==='[DONE]') continue;
       try{
         const j=JSON.parse(d);
-        const c=j.choices?.[0]?.delta?.content||'';
+        const delta=j.choices?.[0]?.delta||{};
+        const c=delta.content || delta.reasoning || delta.reasoning_content || '';
         if(c){full+=c;onChunk(full);}
       }catch{}
     }
   }
   if(buf.startsWith('data: ')&&buf.slice(6).trim()!=='[DONE]'){
-    try{const j=JSON.parse(buf.slice(6).trim());const c=j.choices?.[0]?.delta?.content||'';if(c){full+=c;onChunk(full);}}catch{}
+    try{const j=JSON.parse(buf.slice(6).trim());const delta=j.choices?.[0]?.delta||{};const c=delta.content || delta.reasoning || delta.reasoning_content || '';if(c){full+=c;onChunk(full);}}catch{}
   }
   return full;
 }
@@ -661,6 +700,8 @@ function loadLastAnalysis(){
     // Show analyzer
     sDisp('home','none');
     sDisp('analyzer','flex');
+    sDisp('loading','none');
+    try{ window.dispatchEvent(new CustomEvent('analysis-progress',{detail:{progress:100,status:'Loaded saved analysis'}})); }catch{}
     const rbar = document.getElementById('rbar-url');
     if (rbar) rbar.textContent = 'github.com/' + FULL;
     setStatus('done');
@@ -690,6 +731,8 @@ function loadLastAnalysis(){
         full: FULL
       } 
     }));
+    // also fire partial for early paint
+    try{ window.dispatchEvent(new CustomEvent('analysis-partial',{detail:d})); }catch{}
   }catch(e){
     alert('Failed to load saved analysis: '+e.message);
   }

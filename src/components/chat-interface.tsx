@@ -107,37 +107,72 @@ export function ChatInterface() {
       if (!last) throw new Error("No analysis data found. Please analyze a repository first.");
       const data = JSON.parse(last);
 
-      // Build context (similar to logic.js)
+      // Build context — keep under Groq 7000 ITPM (~28000 chars). Estimate tokens ≈ chars/4.
+      const estTokens = (s: string) => Math.ceil(s.length / 4);
       let sys = `You are CodeSighter AI. You have analyzed the repo "${data.full}" (${data.stats.files} files, ${(data.stats.lines || 0).toLocaleString()} lines).\n\n`
-        + `Functions: ${data.functions?.slice(0, 60).map((f: any) => f.name + ' in ' + f.file).join(', ')}\n\n`
-        + `File list: ${data.files?.map((f: any) => f.path).join(', ')}\n\n`
-        + `AI Analysis summary:\n${(data.aiResult || '').slice(0, 5000)}\n\n`
-        + `File contents (partial):\n${data.files?.slice(0, 15).map((f: any) => 'FILE: ' + f.path + '\n' + f.content.slice(0, 500)).join('\n---\n')}`
+        + `Functions: ${data.functions?.slice(0, 30).map((f: any) => f.name + ' in ' + f.file).join(', ')}\n\n`
+        + `File list (first 60): ${data.files?.slice(0,60).map((f: any) => f.path).join(', ')}${(data.files?.length||0)>60 ? ` +${data.files.length-60} more` : ''}\n\n`
+        + `AI Analysis summary:\n${(data.aiResult || '').slice(0, 2000)}\n\n`
+        + `File contents (partial, 8 files × 350 chars):\n${data.files?.slice(0, 8).map((f: any) => 'FILE: ' + f.path + '\n' + (f.content||'').slice(0, 350).replace(/\s+/g,' ').trim()).join('\n---\n')}`
         + `\n\nAnswer specifically about this codebase. Reference files by name. Be concise and helpful.`;
+      // hard cap sys to ~10000 chars (~2500 tokens)
+      if (sys.length > 10000) sys = sys.slice(0, 10000) + '\n[truncated]';
+      // Log estimated tokens for debugging
+      // console.debug('sys tokens', estTokens(sys));
 
-      const chatHistory = messages.map(m => ({ role: m.role, content: m.content })).slice(-8);
+      const chatHistory = messages.map(m => ({ role: m.role, content: m.content })).slice(-6);
       const apiMessages = [
         { role: 'system', content: sys },
         ...chatHistory,
         { role: 'user', content: currentInput }
       ];
 
-      const response = await fetch('/api/chat', {
+      let response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'meta/llama-3.1-8b-instruct',
+          model: localStorage.getItem('codesighter_model') || 'qwen/qwen3.8-27b',
           messages: apiMessages,
-          max_tokens: 4096,
+          max_tokens: 2048,
           temperature: 0.5,
           top_p: 0.9,
           stream: true
         })
       });
 
-      if (!response.ok) {
+      // 413 ITPM — retry with minimal context (Groq on_demand 7000 tokens/min)
+      if (!response.ok && response.status === 413) {
+        const errText0 = await response.text();
+        console.warn('Groq 413, retrying with minimal context', errText0.slice(0,200));
+        const minimalSys = `You are CodeSighter AI. Repo "${data.full}" (${data.stats.files} files). Summary:\n${(data.aiResult||'').slice(0, 1200)}\nAnswer briefly about this codebase.`;
+        const retryMessages = [
+          { role: 'system', content: minimalSys },
+          ...chatHistory.slice(-4),
+          { role: 'user', content: currentInput }
+        ];
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: localStorage.getItem('codesighter_model') || 'qwen/qwen3.8-27b',
+            messages: retryMessages,
+            max_tokens: 2048,
+            temperature: 0.5,
+            top_p: 0.9,
+            stream: true
+          })
+        }) as Response;
+        if (!response.ok) {
+          const errText = await response.text();
+          let hint = '';
+          try { const j = JSON.parse(errText); if (j.hint) hint = ' — ' + j.hint; } catch {}
+          throw new Error(`AI error ${response.status} (retry): ${errText.slice(0, 500)}${hint} — original: ${errText0.slice(0,200)}`);
+        }
+      } else if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`AI error ${response.status}: ${errText.slice(0, 100)}`);
+        let hint = '';
+        try { const j = JSON.parse(errText); if (j.hint) hint = ' — ' + j.hint; if (j.attempts) hint += ` (tried: ${j.attempts.join(', ')})`; } catch {}
+        throw new Error(`AI error ${response.status}: ${errText.slice(0, 500)}${hint}`);
       }
       if (!response.body) throw new Error("No response body from AI API");
 
@@ -168,7 +203,8 @@ export function ChatInterface() {
           
           try {
             const json = JSON.parse(dataStr);
-            const content = json.choices?.[0]?.delta?.content || "";
+            const delta = json.choices?.[0]?.delta || {};
+            const content = delta.content || (delta as any).reasoning || (delta as any).reasoning_content || "";
             if (content) {
               fullContent += content;
               setMessages(prev => {
@@ -252,7 +288,7 @@ export function ChatInterface() {
               <div className="absolute inset-0 bg-primary/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[11px] font-bold text-foreground">Llama 3.1 70B</span>
+              <span className="text-[11px] font-bold text-foreground">Groq • Qwen 3 27B</span>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-[9px] text-muted-foreground font-medium">Expert Analysis Active</span>

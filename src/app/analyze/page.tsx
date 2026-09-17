@@ -1,7 +1,7 @@
 "use client";
 import Script from "next/script";
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,8 +44,12 @@ import { useTheme } from "@/components/theme-provider";
 
 function AnalyzeContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const repoUrl = searchParams.get('url');
   const loadParam = searchParams.get('load');
+  const [isGuarded, setIsGuarded] = useState(false);
+  const [isRefetchBlocked, setIsRefetchBlocked] = useState(false);
+  const [blockedExistingRepo, setBlockedExistingRepo] = useState<string>("");
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   // Initialize from localStorage synchronously so dashboard shows instantly on reload
   const [isLoading, setIsLoading] = useState(() => {
@@ -79,6 +83,61 @@ function AnalyzeContent() {
   const handleQs = (e: React.MouseEvent<HTMLElement>) =>
     window.qs?.(e.currentTarget as HTMLElement);
   const handleSendChat = () => window.sendChat?.();
+
+  // STRICT GUARD: if NO data in localStorage, do not allow dashboard/other pages
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('codesighter_last');
+      const hasData = !!raw;
+      const isFreshFetch = !!repoUrl;
+      const isLoad = loadParam === 'true';
+      if (!hasData && !isFreshFetch && !isLoad) {
+        setIsGuarded(true);
+        setStatusText("No analysis found — redirecting to home…");
+        const t = setTimeout(() => router.replace('/'), 900);
+        return () => clearTimeout(t);
+      }
+      // If data exists, do NOT allow fetching again via ?url= — force clear first
+      if (hasData && isFreshFetch) {
+        try { 
+          const d = JSON.parse(raw!); 
+          setBlockedExistingRepo(d.full || "");
+          // hydrate so View Existing shows correct dashboard behind overlay
+          if (d.stats) setStats(d.stats);
+          if (d.functions) setFunctions(d.functions);
+          if (d.duplicates) setDuplicates(d.duplicates);
+          if (d.aiResult) setAiResult(d.aiResult);
+          if (d.full) setFull(d.full);
+        } catch {}
+        setIsRefetchBlocked(true);
+        setIsLoading(false);
+      }
+    } catch {}
+  }, [repoUrl, loadParam, router]);
+
+  const handleClearAndHome = () => {
+    localStorage.removeItem('codesighter_last');
+    router.replace('/');
+  };
+  const handleClearAndRefetch = () => {
+    localStorage.removeItem('codesighter_last');
+    setIsRefetchBlocked(false);
+    setIsGuarded(false);
+    if (repoUrl) {
+      setIsLoading(true);
+      setProgress(1);
+      setStatusText("Starting analysis…");
+      const ri = document.getElementById('rurl') as HTMLInputElement;
+      if (ri) ri.value = repoUrl;
+      window.run?.();
+    } else {
+      router.replace('/');
+    }
+  };
+  const handleViewExisting = () => {
+    setIsRefetchBlocked(false);
+    router.replace('/analyze?load=true');
+  };
 
   // Hydrate from localStorage immediately (fixes dashboard empty after reload)
   useEffect(() => {
@@ -243,10 +302,44 @@ function AnalyzeContent() {
     return () => obs.disconnect();
   }, [treeHtml, issuesHtml]);
 
+  if (isGuarded) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Card className="max-w-md w-full border-destructive/30">
+          <CardHeader><CardTitle className="flex items-center gap-2 text-destructive"><AlertCircle className="h-5 w-5"/> No analysis found</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">Dashboard is blocked — no fetched data in local storage. Run an analysis from Home first.</p>
+            <div className="flex gap-2">
+              <Button onClick={() => router.replace('/')} className="flex-1">Go to Home</Button>
+              <Button variant="outline" onClick={handleClearAndHome} className="flex-1">Clear & Home</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-full min-h-screen bg-background flex flex-col overflow-hidden">
       {/* Simple Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/10 pointer-events-none" />
+      {/* REFETCH BLOCKED — data already exists, fetching stopped */}
+      {isRefetchBlocked && (
+        <div className="absolute inset-0 z-40 bg-background/95 backdrop-blur flex items-center justify-center p-6">
+          <Card className="max-w-lg w-full border-amber-500/30">
+            <CardHeader><CardTitle className="flex items-center gap-2 text-amber-600"><AlertTriangle className="h-5 w-5"/> Fetching blocked — data already exists</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">Existing analysis for <span className="font-mono font-bold text-foreground break-all">{blockedExistingRepo || full || "previous repo"}</span> is stored. Fetching <span className="font-mono break-all">{repoUrl}</span> is stopped. Clear fetched block first.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={handleViewExisting} variant="outline"><LayoutDashboard className="mr-2 h-4 w-4"/> View Existing</Button>
+                <Button onClick={handleClearAndRefetch} variant="destructive"><Trash2 className="mr-2 h-4 w-4"/> Clear & Fetch New</Button>
+              </div>
+              <Button variant="ghost" size="sm" className="w-full" onClick={handleClearAndHome}>Clear & Go Home</Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
 
       {/* Hidden inputs to populate from URL logic */}
       <div style={{ display: 'none' }}>

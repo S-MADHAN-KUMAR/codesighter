@@ -28,18 +28,16 @@ export default function Home() {
 
   const { theme, toggleTheme } = useTheme();
   const [lastInfo, setLastInfo] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem('codesighter_last');
       if (raw) {
-        const d = JSON.parse(raw);
-        const info = `${d.full} • ${d.stats?.files ?? 0} files • ${(d.stats?.lines ?? 0).toLocaleString()} lines`;
-        setLastInfo(info);
-        const btn = document.getElementById('last-analysis-btn');
-        if (btn) btn.style.display = 'block';
-        const el = document.getElementById('last-analysis-info');
-        if (el) el.textContent = info;
+        // STRICT: if data exists, do not allow to visit home — redirect to dashboard
+        setIsRedirecting(true);
+        router.replace('/analyze?load=true');
+        return;
       }
       const savedTok = localStorage.getItem('codesighter_token');
       if (savedTok) {
@@ -47,7 +45,7 @@ export default function Home() {
         if (ti) ti.value = savedTok;
       }
     } catch {}
-  }, []);
+  }, [router]);
 
   const handleRun = () => {
     const url = (document.getElementById("rurl") as HTMLInputElement)?.value;
@@ -69,6 +67,24 @@ export default function Home() {
     "twbs/bootstrap",
     "microsoft/vscode"
   ];
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 flex flex-col items-center gap-4 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Previous analysis found — redirecting to dashboard…</p>
+            <p className="text-xs text-muted-foreground">Home is blocked while fetched data exists.</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Button variant="outline" className="flex-1" onClick={() => { localStorage.removeItem('codesighter_last'); setIsRedirecting(false); }}>Clear Data & Stay</Button>
+              <Button className="flex-1" onClick={() => router.replace('/analyze?load=true')}>Go to Dashboard</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <>

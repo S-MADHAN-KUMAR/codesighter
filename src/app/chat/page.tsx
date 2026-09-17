@@ -3,8 +3,46 @@
 import { Navbar } from "@/components/navbar";
 import { ChatInterface } from "@/components/chat-interface";
 import Script from "next/script";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { AlertCircle } from "lucide-react";
 
 export default function ChatPage() {
+  const router = useRouter();
+  const [isGuarded, setIsGuarded] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('codesighter_last');
+      if (!raw) {
+        setIsGuarded(true);
+        const t = setTimeout(() => router.replace('/'), 900);
+        return () => clearTimeout(t);
+      }
+    } catch {}
+  }, [router]);
+
+  if (isGuarded) {
+    return (
+      <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center p-6 bg-muted/20">
+          <Card className="max-w-md w-full border-destructive/30">
+            <CardHeader><CardTitle className="flex items-center gap-2 text-destructive"><AlertCircle className="h-5 w-5"/> No analysis found</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">Chat is blocked — no fetched data in local storage. Run an analysis from Home first.</p>
+              <div className="flex gap-2">
+                <Button onClick={() => router.replace('/')} className="flex-1">Go to Home</Button>
+                <Button variant="outline" onClick={() => { localStorage.removeItem('codesighter_last'); router.replace('/'); }} className="flex-1">Clear & Home</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
       <Navbar />

@@ -1,12 +1,13 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { Globe, Sun, Moon } from "lucide-react";
+import { Globe, Sun, Moon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Toggle } from "@/components/ui/toggle";
 import { useTheme } from "@/components/theme-provider";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 interface NavbarProps {
   activeTab?: string;
@@ -20,6 +21,26 @@ interface NavbarProps {
 export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusText, repoName }: NavbarProps) {
   const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
+  const [hasData, setHasData] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try { setHasData(!!localStorage.getItem('codesighter_last')); } catch {}
+    };
+    check();
+    window.addEventListener('storage', check);
+    // also listen for custom clear event and visibility
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
+    return () => { window.removeEventListener('storage', check); window.removeEventListener('focus', onFocus); };
+  }, []);
+  const handleClear = () => {
+    try { localStorage.removeItem('codesighter_last'); } catch {}
+    setHasData(false);
+    router.replace('/');
+    // force reload to ensure home guard picks up cleared state
+    setTimeout(() => window.location.href = '/', 150);
+  };
 
   const handleCsw = (t: string, e: React.MouseEvent<HTMLElement>) => {
     setActiveTab?.(t);
@@ -81,8 +102,20 @@ export function Navbar({ activeTab, setActiveTab, isLoading, progress, statusTex
         )}
       </nav>
 
-      <div className="flex items-center gap-6">
-        <Toggle pressed={theme === "dark"} onPressedChange={toggleTheme} aria-label="Toggle theme" size="sm" className="h-8 w-8 rounded-full data-[state=on]:bg-primary/10">
+      <div className="flex items-center gap-3">
+        {hasData && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClear}
+            className="h-8 gap-1.5 border-destructive/20 text-destructive hover:bg-destructive hover:text-white hover:border-destructive"
+            title="Clear fetched data and return to Home"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline text-xs font-medium">Clear Data</span>
+          </Button>
+        )}
+        <Toggle pressed={theme === "dark"} onPressedChange={toggleTheme} aria-label="Toggle theme" size="sm" className="h-8 w-8 rounded-full data-[state=on]:bg-primary/10 shrink-0">
           {theme === "dark" ? <Sun className="h-4 w-4 text-primary" /> : <Moon className="h-4 w-4" />}
         </Toggle>
       </div>
